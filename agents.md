@@ -6,39 +6,62 @@
 
 ## Technologie
 
-- **Sprache**: Python 3
-- **Abhängigkeiten**: Standardbibliothek (csv, urllib, argparse)
+- **Sprache**: Python 3.11+
+- **Abhängigkeiten**: Nur Standardbibliothek (csv, urllib, argparse, pathlib, logging, ssl, subprocess)
 - **Lizenz**: GPL-3.0
 
 ## Projektstruktur
 
 ```
 csv2md/
-├── plan.md      # Projektplanung
+├── plan.md      # Projektplanung & Coding-Richtlinien
 ├── README.md    # Dokumentation (GPL-3.0)
 ├── agents.md    # Diese Datei
-└── csv2md.py    # Hauptskript
+├── csv2md.py    # Hauptskript
+└── .gitignore   # .venv/, __pycache__/, *.pyc
 ```
 
 ## Entwicklung
 
-### Coding Standards
+### Venv einrichten
 
-- Python-Skripte ohne zusätzliche Abhängigkeiten schreiben
-- Standardbibliothek bevorzugen
-- Keine unnötigen Kommentare hinzufügen
-- PEP 8 Konventionen folgen
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+```
 
-### Commits
+### Coding Standards (siehe plan.md)
 
-- Commits erstellen mit: `git add <files> && git commit -m "Nachricht"`
-- PRs erstellen mit: `gh pr create --title "Titel" --body "Beschreibung"`
+- Shebang: `#!/usr/bin/env python3`
+- main()-Guard: `if __name__ == "__main__":`
+- Alle Funktionen typisieren (Type Hints)
+- f-strings, pathlib, logging
+- UTF-8 encoding bei allen Dateioperationen
+- Keine Kommentare (außer kurze Docstrings)
+- `sys.exit(n)` für Exit-Codes
+
+### Exit-Codes
+
+| Code | Bedeutung |
+|------|-----------|
+| 0 | Erfolg |
+| 1 | CSV nicht gefunden / nicht lesbar / Output existiert ohne `-f` |
+| 2 | Spalte nicht vorhanden |
+| 3 | URL nicht erreichbar |
+| 4 | SSL-Verifikationsfehler |
+| 5 | Leeres CSV |
+| 6 | Gleichzeitig `-i` + `-c` oder ungültiges Trennzeichen |
+| 7 | Output-Verzeichnis existiert nicht |
+| 8 | input/output fehlt im nicht-interaktiven Modus |
 
 ## Testing
 
-- Manuelles Testen mit Beispieldaten
-- Interaktiven Modus (`-i`) testen
-- systemd-Integration manuell verifizieren
+```bash
+# Tests mit .tmp/ Verzeichnis
+python3 csv2md.py -c "Name" -f .tmp/test.csv .tmp/output.md
+python3 csv2md.py -i < .tmp/input.txt
+python3 csv2md.py -h
+```
 
 ## Tool-Nutzung
 
@@ -49,3 +72,10 @@ csv2md/
 - **write/edit**: Dateien ändern
 - **question**: Benutzerfragen stellen
 - **todowrite**: Aufgaben verfolgen
+
+## Wichtige Regeln
+
+- Vor Code-Änderungen: **immer plan.md lesen**
+- Coding-Richtlinien aus plan.md befolgen
+- Funktionen testen bevor committen
+- `.tmp/` für Testdaten verwenden

@@ -80,7 +80,7 @@ if __name__ == "__main__":
 ## Verwendung
 
 ```bash
-csv2md.py [Optionen] <input> <output>
+csv2md.py [Optionen] [input] [output]
 ```
 
 ### Optionen
@@ -99,10 +99,14 @@ csv2md.py [Optionen] <input> <output>
 
 ### Argumente
 
-- **input**: URL (`https://...`) oder Dateipfad zur CSV-Datei
+- **input** (optional): URL (`https://...`) oder Dateipfad zur CSV-Datei
   - Erkennung: `input_str.startswith(("https://", "http://"))` → URL, sonst Pfad
-- **output**: Dateipfad für die Markdown-Ausgabe
+  - Im interaktiven Modus (`-i`) wird input bei Bedarf erfragt
+  - Im nicht-interaktiven Modus (`-c`) ist input **erforderlich**
+- **output** (optional): Dateipfad für die Markdown-Ausgabe
   - Output-Verzeichnis muss existieren, sonst Fehler + Exit 7
+  - Im interaktiven Modus (`-i`) wird output bei Bedarf erfragt
+  - Im nicht-interaktiven Modus (`-c`) ist output **erforderlich**
 
 ### Exit-Codes
 
@@ -114,8 +118,9 @@ csv2md.py [Optionen] <input> <output>
 | 3 | URL nicht erreichbar (Timeout 30s) |
 | 4 | SSL-Verifikationsfehler |
 | 5 | Leere CSV |
-| 6 | `-i` + `-c` gleichzeitig |
+| 6 | `-i` + `-c` gleichzeitig, oder ungültiges Trennzeichen |
 | 7 | Output-Verzeichnis existiert nicht |
+| 8 | input/output fehlt im nicht-interaktiven Modus |
 
 ## Modi
 
@@ -123,14 +128,20 @@ csv2md.py [Optionen] <input> <output>
 
 **Präziser Flow (Reihenfolge wichtig):**
 
-1. **Delimiter abfragen** — Komma / Semikolon / Tab / Auto-Erkennung
+1. **Input-Quelle erfragen** — "CSV-Quelle (Dateipfad oder URL):"
+   - Wenn input als CLI-Argument übergeben wurde → überspringen
+   - Erkennung: startet mit `https://` oder `http://` → URL, sonst Dateipfad
+2. **Delimiter abfragen** — Komma / Semikolon / Tab / Auto-Erkennung
+   - Wenn delimiter als CLI-Argument übergeben wurde → überspringen
    - Bei `auto`: Rohdaten laden, `csv.Sniffer` versuchen, bei Fehlschlag Fallback auf Komma
-2. **CSV laden** — URL oder Datei öffnen, mit gewähltem Delimiter parsen
+3. **CSV laden** — URL oder Datei öffnen, mit gewähltem Delimiter parsen
    - URL: `urllib.request.urlopen()` mit 30s Timeout, SSL-Verify (es sei denn `--no-verify`)
-3. **Spaltenüberschriften anzeigen** — nummerierte Liste (1, 2, 3, ...)
-4. **Spalte auswählen** — Nummer eingeben
-5. **Output existiert?** — Ja → "Überschreiben?" fragen; Nein → weiter
-6. **systemd-Abfrage:** "Soll systemd aufgesetzt werden?" (J/N)
+4. **Spaltenüberschriften anzeigen** — nummerierte Liste (1, 2, 3, ...)
+5. **Spalte auswählen** — Nummer eingeben
+6. **Output-Pfad erfragen** — "Ausgabe-Dateipfad:"
+   - Wenn output als CLI-Argument übergeben wurde → überspringen
+7. **Output existiert?** — Ja → "Überschreiben?" fragen; Nein → weiter
+8. **systemd-Abfrage:** "Soll systemd aufgesetzt werden?" (J/N)
    - Falls Ja: Timer-Option (stündlich/täglich/wöchentlich)
      - Bei täglich: Uhrzeit (HH:MM)
      - Bei wöchentlich: Wochentag + Uhrzeit
@@ -138,7 +149,7 @@ csv2md.py [Optionen] <input> <output>
    - **"Nur Dateien erstellen" oder "Sofort installieren"?**
      - Dateien erstellen → `.service`/`.timer` im aktuellen Verzeichnis
      - Installieren → Dateien nach `~/.config/systemd/user/` kopieren + Timer aktivieren
-7. **Markdown generieren und schreiben** → Fertig
+9. **Markdown generieren und schreiben** → Fertig
 
 ### Nicht-interaktiver Modus (systemd)
 
@@ -186,8 +197,9 @@ csv2md.py [Optionen] <input> <output>
 - URL nicht erreichbar / Timeout (30s) → Exit 3
 - SSL-Verifikationsfehler → Exit 4 + Hinweis auf `--no-verify`
 - Leere CSV (0 Zeilen) → Exit 5
-- `-i` + `-c` gleichzeitig → Exit 6
+- `-i` + `-c` gleichzeitig oder ungültiges Trennzeichen → Exit 6
 - Output-Verzeichnis fehlt → Exit 7
+- input/output fehlt im nicht-interaktiven Modus → Exit 8
 - Delimiter-Erkennung fehlgeschlagen → Fallback auf Komma, kein Fehler
 
 ## Netzwerk (URL-Input)

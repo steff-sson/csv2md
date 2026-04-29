@@ -38,8 +38,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-d", "--delimiter", type=str, default="auto", help="CSV-Trennzeichen: auto, ,, ;, \\\\t, tab")
     parser.add_argument("-e", "--encoding", type=str, default="utf-8", help="Zeichenkodierung (default: utf-8)")
     parser.add_argument("-n", "--no-verify", action="store_true", help="SSL-Zertifikatsprüfung deaktivieren")
-    parser.add_argument("input", type=str, help="CSV-Datei (URL oder Dateipfad)")
-    parser.add_argument("output", type=str, help="Markdown-Ausgabedatei")
+    parser.add_argument("input", nargs="?", type=str, default=None, help="CSV-Datei (URL oder Dateipfad, optional mit -i)")
+    parser.add_argument("output", nargs="?", type=str, default=None, help="Markdown-Ausgabedatei (optional mit -i)")
     return parser.parse_args(argv)
 
 
@@ -181,6 +181,44 @@ def ask_weekday() -> str:
     return WEEKDAYS[idx - 1]
 
 
+def ask_input_source(cli_value: str | None) -> str:
+    if cli_value is not None:
+        return cli_value
+    while True:
+        source = input("CSV-Quelle (Dateipfad oder URL): ").strip()
+        if source:
+            return source
+        print("Bitte eine gültige Quelle eingeben.")
+
+
+def ask_output_path(cli_value: str | None) -> Path:
+    if cli_value is not None:
+        path = Path(cli_value)
+    else:
+        while True:
+            raw = input("Ausgabe-Dateipfad: ").strip()
+            if raw:
+                path = Path(raw)
+                break
+            print("Bitte einen gültigen Pfad eingeben.")
+    if not path.parent.exists():
+        logger.error("Output-Verzeichnis existiert nicht: %s", path.parent)
+        sys.exit(7)
+    return path
+
+
+def ask_delimiter(cli_value: str | None) -> str:
+    if cli_value is not None:
+        return cli_value
+    options = ["auto", ",", ";", "tab"]
+    idx = ask_choice("CSV-Trennzeichen wählen:", options)
+    return options[idx - 1]
+
+
+def resolve_delimiter(delimiter: str) -> str | None:
+    return DELIMITER_MAP.get(delimiter)
+
+
 def generate_service_content(
     python_path: str,
     script_path: str,
@@ -267,6 +305,8 @@ def handle_systemd_setup(
     args: argparse.Namespace,
     column: str,
     delimiter_val: str,
+    input_str: str,
+    output_str: str,
 ) -> None:
     print("\n--- systemd Einrichtung ---")
 
@@ -287,14 +327,17 @@ def handle_systemd_setup(
     script_path = str(Path(__file__).resolve())
     working_dir = str(Path(__file__).resolve().parent)
 
+    resolved_input = str(Path(input_str).resolve()) if not input_str.startswith(("https://", "http://")) else input_str
+    resolved_output = str(Path(output_str).resolve())
+
     service_content = generate_service_content(
         python_path=python_path,
         script_path=script_path,
         working_dir=working_dir,
         column=column,
         delimiter=delimiter_val,
-        input_str=str(Path(args.input).resolve()) if not args.input.startswith(("https://", "http://")) else args.input,
-        output_str=str(Path(args.output).resolve()),
+        input_str=resolved_input,
+        output_str=resolved_output,
     )
     timer_content = generate_timer_content(timer_option, time_str, weekday)
 
@@ -315,12 +358,11 @@ def handle_systemd_setup(
 def interactive_mode(args: argparse.Namespace) -> int:
     print("=== csv2md - Interaktiver Modus ===\n")
 
-    delimiter_options = ["auto", ",", ";", "tab"]
-    delim_idx = ask_choice("CSV-Trennzeichen wählen:", delimiter_options)
-    chosen_delimiter = delimiter_options[delim_idx - 1]
-    delim_value = DELIMITER_MAP[chosen_delimiter]
+    input_str = ask_input_source(args.input)
+    chosen_delimiter = ask_delimiter(args.delimiter)
+    delim_value = resolve_delimiter(chosen_delimiter)
 
-    rows = load_csv(args.input, delim_value, args.encoding, args.no_verify)
+    rows = load_csv(input_str, delim_value, args.encoding, args.no_verify)
 
     if len(rows) == 0:
         logger.error("CSV is empty")
@@ -330,7 +372,7 @@ def interactive_mode(args: argparse.Namespace) -> int:
     col_idx = ask_choice("Spalte wählen:", headers)
     column = headers[col_idx - 1]
 
-    output_path = Path(args.output)
+    output_path = ask_output_path(args.output)
     if output_path.exists() and not args.force:
         if not ask_yes_no(f"Output existiert bereits. Überschreiben?"):
             print("Abgebrochen.")
@@ -341,7 +383,7 @@ def interactive_mode(args: argparse.Namespace) -> int:
     print(f"Markdown geschrieben: {output_path}")
 
     if ask_yes_no("Soll systemd aufgesetzt werden?"):
-        handle_systemd_setup(args, column, chosen_delimiter)
+        handle_systemd_setup(args, column, chosen_delimiter, input_str, str(output_path))
 
     return 0
 
@@ -351,8 +393,12 @@ def non_interactive_mode(args: argparse.Namespace) -> int:
         logger.error("--column ist im nicht-interaktiven Modus erforderlich")
         return 6
 
-    delim_value = DELIMITER_MAP.get(args.delimiter)
-    if delim_value is None and args.delimiter != "auto":
+    if args.input is None or args.output is None:
+        logger.error("input und output sind im nicht-interaktiven Modus erforderlich")
+        return 8
+
+    delim_value = resolve_delimiter(args.delimiter)
+    if delim_value is None and args.delimiter not in (None, "auto"):
         logger.error("Ungültiges Trennzeichen: %s", args.delimiter)
         logger.error("Erlaubt: auto, ,, ;, \\\\t")
         return 6
@@ -388,16 +434,11 @@ def main() -> int:
     args = parse_args()
     setup_logging(verbose=False)
 
-    output_path = Path(args.output)
-    if not output_path.parent.exists():
-        logger.error("Output-Verzeichnis existiert nicht: %s", output_path.parent)
-        return 7
-
     if args.interactive and args.column:
         logger.error("-i und -c schliessen sich gegenseitig aus")
         return 6
 
-    if args.delimiter not in DELIMITER_MAP:
+    if args.delimiter is not None and args.delimiter not in DELIMITER_MAP:
         logger.error("Ungültiges Trennzeichen: %s", args.delimiter)
         logger.error("Erlaubt: auto, ,, ;, \\\\t, tab")
         return 6
