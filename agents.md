@@ -2,7 +2,7 @@
 
 ## Projektübersicht
 
-**csv2md** - Ein Python-Skript zur Konvertierung von CSV-Spalten in Markdown-Listen. Unterstützt interaktiven und nicht-interaktiven Modus mit optionaler systemd-Integration.
+**csv2md** - Ein Python-Skript zur Konvertierung von CSV-Spalten in Markdown-Listen. Unterstützt interaktiven und nicht-interaktiven Modus mit optionaler systemd-Integration. **Projekt abgeschlossen.**
 
 ## Technologie
 
@@ -14,7 +14,6 @@
 
 ```
 csv2md/
-├── plan.md      # Projektplanung & Coding-Richtlinien
 ├── README.md    # Dokumentation (GPL-3.0)
 ├── agents.md    # Diese Datei
 ├── csv2md.py    # Hauptskript
@@ -30,7 +29,7 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 ```
 
-### Coding Standards (siehe plan.md)
+### Coding Standards
 
 - Shebang: `#!/usr/bin/env python3`
 - main()-Guard: `if __name__ == "__main__":`
@@ -75,7 +74,6 @@ python3 csv2md.py -h
 
 ## Wichtige Regeln
 
-- Vor Code-Änderungen: **immer plan.md lesen**
-- Coding-Richtlinien aus plan.md befolgen
+- Coding Standards oben beachten
 - Funktionen testen bevor committen
 - `.tmp/` für Testdaten verwenden
