@@ -35,7 +35,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-i", "--interactive", action="store_true", help="Interaktiver Modus")
     parser.add_argument("-c", "--column", type=str, default=None, help="Spaltenname (non-interaktiv)")
     parser.add_argument("-f", "--force", action="store_true", help="Output überschreiben ohne Nachfrage")
-    parser.add_argument("-d", "--delimiter", type=str, default="auto", help="CSV-Trennzeichen: auto, ,, ;, \\\\t, tab")
+    parser.add_argument("-d", "--delimiter", type=str, default=None, help="CSV-Trennzeichen: auto, ,, ;, \\\\t, tab (default: auto)")
     parser.add_argument("-e", "--encoding", type=str, default="utf-8", help="Zeichenkodierung (default: utf-8)")
     parser.add_argument("-n", "--no-verify", action="store_true", help="SSL-Zertifikatsprüfung deaktivieren")
     parser.add_argument("input", nargs="?", type=str, default=None, help="CSV-Datei (URL oder Dateipfad, optional mit -i)")
@@ -139,17 +139,17 @@ def convert_to_markdown(rows: list[dict[str, str]], column: str) -> str:
 
 
 def ask_choice(prompt: str, options: list[str]) -> int:
-    print(prompt)
+    print(prompt, flush=True)
     for i, opt in enumerate(options, 1):
-        print(f"  {i}) {opt}")
+        print(f"  {i}) {opt}", flush=True)
     while True:
         try:
             choice = int(input("> ").strip())
             if 1 <= choice <= len(options):
                 return choice
-            print(f"Bitte eine Zahl zwischen 1 und {len(options)} eingeben.")
+            print(f"Bitte eine Zahl zwischen 1 und {len(options)} eingeben.", flush=True)
         except ValueError:
-            print("Bitte eine gültige Zahl eingeben.")
+            print("Bitte eine gültige Zahl eingeben.", flush=True)
 
 
 def ask_yes_no(prompt: str) -> bool:
@@ -159,7 +159,7 @@ def ask_yes_no(prompt: str) -> bool:
             return True
         if answer in ("n", "nein", "no"):
             return False
-        print("Bitte 'j' oder 'n' eingeben.")
+        print("Bitte 'j' oder 'n' eingeben.", flush=True)
 
 
 def ask_time(prompt: str) -> str:
@@ -171,9 +171,9 @@ def ask_time(prompt: str) -> str:
             minute = int(parts[1])
             if 0 <= hour <= 23 and 0 <= minute <= 59:
                 return f"{hour:02d}:{minute:02d}"
-            print("Bitte eine gültige Uhrzeit (HH:MM) eingeben.")
+            print("Bitte eine gültige Uhrzeit (HH:MM) eingeben.", flush=True)
         except (ValueError, IndexError):
-            print("Bitte das Format HH:MM verwenden.")
+            print("Bitte das Format HH:MM verwenden.", flush=True)
 
 
 def ask_weekday() -> str:
@@ -188,7 +188,7 @@ def ask_input_source(cli_value: str | None) -> str:
         source = input("CSV-Quelle (Dateipfad oder URL): ").strip()
         if source:
             return source
-        print("Bitte eine gültige Quelle eingeben.")
+        print("Bitte eine gültige Quelle eingeben.", flush=True)
 
 
 def ask_output_path(cli_value: str | None) -> Path:
@@ -200,7 +200,7 @@ def ask_output_path(cli_value: str | None) -> Path:
             if raw:
                 path = Path(raw)
                 break
-            print("Bitte einen gültigen Pfad eingeben.")
+            print("Bitte einen gültigen Pfad eingeben.", flush=True)
     if not path.parent.exists():
         logger.error("Output-Verzeichnis existiert nicht: %s", path.parent)
         sys.exit(7)
@@ -284,8 +284,8 @@ def write_systemd_files(
     timer_path = output_dir / "csv2md.timer"
     service_path.write_text(service_content, encoding="utf-8")
     timer_path.write_text(timer_content, encoding="utf-8")
-    print(f"  -> {service_path}")
-    print(f"  -> {timer_path}")
+    print(f"  -> {service_path}", flush=True)
+    print(f"  -> {timer_path}", flush=True)
 
 
 def install_systemd(service_content: str, timer_content: str) -> None:
@@ -295,7 +295,7 @@ def install_systemd(service_content: str, timer_content: str) -> None:
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
         subprocess.run(["systemctl", "--user", "enable", "csv2md.timer"], check=True)
         subprocess.run(["systemctl", "--user", "start", "csv2md.timer"], check=True)
-        print("systemd-Timer wurde installiert und gestartet.")
+        print("systemd-Timer wurde installiert und gestartet.", flush=True)
     except subprocess.CalledProcessError as e:
         logger.error("systemd installation failed: %s", e)
         sys.exit(1)
@@ -308,7 +308,7 @@ def handle_systemd_setup(
     input_str: str,
     output_str: str,
 ) -> None:
-    print("\n--- systemd Einrichtung ---")
+    print("\n--- systemd Einrichtung ---", flush=True)
 
     timer_options = ["stündlich", "täglich", "wöchentlich"]
     timer_idx = ask_choice("Timer-Option wählen:", timer_options)
@@ -346,17 +346,18 @@ def handle_systemd_setup(
         install_systemd(service_content, timer_content)
     else:
         current_dir = Path.cwd()
-        print(f"Erstelle systemd-Dateien in: {current_dir}")
+        print(f"Erstelle systemd-Dateien in: {current_dir}", flush=True)
         write_systemd_files(service_content, timer_content, current_dir)
-        print("\nZur manuellen Installation:")
-        print(f"  cp {current_dir}/csv2md.service {current_dir}/csv2md.timer ~/.config/systemd/user/")
-        print("  systemctl --user daemon-reload")
-        print("  systemctl --user enable csv2md.timer")
-        print("  systemctl --user start csv2md.timer")
+        print("\nZur manuellen Installation:", flush=True)
+        print(f"  cp {current_dir}/csv2md.service {current_dir}/csv2md.timer ~/.config/systemd/user/", flush=True)
+        print("  systemctl --user daemon-reload", flush=True)
+        print("  systemctl --user enable csv2md.timer", flush=True)
+        print("  systemctl --user start csv2md.timer", flush=True)
 
 
 def interactive_mode(args: argparse.Namespace) -> int:
-    print("=== csv2md - Interaktiver Modus ===\n")
+    print("=== csv2md - Interaktiver Modus ===", flush=True)
+    print(flush=True)
 
     input_str = ask_input_source(args.input)
     chosen_delimiter = ask_delimiter(args.delimiter)
@@ -375,12 +376,12 @@ def interactive_mode(args: argparse.Namespace) -> int:
     output_path = ask_output_path(args.output)
     if output_path.exists() and not args.force:
         if not ask_yes_no(f"Output existiert bereits. Überschreiben?"):
-            print("Abgebrochen.")
+            print("Abgebrochen.", flush=True)
             return 0
 
     markdown = convert_to_markdown(rows, column)
     output_path.write_text(markdown, encoding="utf-8")
-    print(f"Markdown geschrieben: {output_path}")
+    print(f"Markdown geschrieben: {output_path}", flush=True)
 
     if ask_yes_no("Soll systemd aufgesetzt werden?"):
         handle_systemd_setup(args, column, chosen_delimiter, input_str, str(output_path))
