@@ -296,6 +296,9 @@ def install_systemd(service_content: str, timer_content: str) -> None:
         subprocess.run(["systemctl", "--user", "enable", "csv2md.timer"], check=True)
         subprocess.run(["systemctl", "--user", "start", "csv2md.timer"], check=True)
         print("systemd-Timer wurde installiert und gestartet.", flush=True)
+        if ask_yes_no("Soll der Dienst sofort einmal ausgeführt werden?"):
+            subprocess.run(["systemctl", "--user", "start", "csv2md.service"], check=True)
+            print("csv2md.service wurde einmalig ausgeführt.", flush=True)
     except subprocess.CalledProcessError as e:
         logger.error("systemd installation failed: %s", e)
         sys.exit(1)
