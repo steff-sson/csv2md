@@ -2,55 +2,82 @@
 
 Skript zur Extraktion einer CSV-Spalte und Export als Markdown-Datei. Unterstützt interaktiven und nicht-interaktiven Modus. Optionale systemd-Integration für regelmäßige Ausführung.
 
+**Voraussetzung:** Python 3.11+, venv
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+```
+
 ## Lizenz
 
-Dieses Programm ist freie Software: Sie können es unter den Bedingungen der GNU General Public License, wie von der Free Software Foundation veröffentlicht, Version 3 der Lizenz, (oder (nach Ihrer Wahl) jeder späteren Version) weitergeben und/oder modifizieren.
-
-Dieses Programm wird in der Hoffnung verteilt, dass es nützlich sein wird, aber OHNE JEDE GEWÄHRLEISTUNG; auch ohne die stillschweigende Gewährleistung der MARKTFÄHIGKEIT oder EIGNUNG FÜR EINEN BESTIMMTEN ZWECK. Details finden Sie in der GNU General Public License.
-
-Sie sollten eine Kopie der GNU General Public License zusammen mit diesem Programm erhalten haben. Falls nicht, sehen Sie <https://www.gnu.org/licenses/>.
+GNU General Public License v3.0 – siehe [LICENSE](https://www.gnu.org/licenses/gpl-3.0.html).
 
 ## Verwendung
 
 ```bash
-csv2md.py [Optionen] <input> <output>
+csv2md.py [Optionen] [input] [output]
 ```
 
 ### Optionen
 
 | Flag | Langform | Beschreibung |
 |------|----------|--------------|
-| `-i` | `--interactive` | Interaktiver Modus (Fragen stellen) |
-| `-c` | `--column NAME` | Spaltenname (non-interaktiv) |
+| `-i` | `--interactive` | Interaktiver Modus (fragt alles ab) |
+| `-c` | `--column NAME` | Spaltenname (non-interaktiv, erforderlich ohne `-i`) |
 | `-f` | `--force` | Output überschreiben ohne Nachfrage |
+| `-d` | `--delimiter CHAR` | Trennzeichen: `auto`, `,`, `;`, `\t`, `tab` (default: `auto`) |
+| `-e` | `--encoding NAME` | Zeichenkodierung (default: `utf-8`) |
+| `-n` | `--no-verify` | SSL-Zertifikatsprüfung deaktivieren |
 | `-h` | `--help` | Hilfe anzeigen |
 
-### Argumente
+### Exit-Codes
 
-- **input**: URL (https://...) oder Dateipfad zur CSV-Datei
-- **output**: Dateipfad für die Markdown-Ausgabe
+| Code | Bedeutung |
+|------|-----------|
+| 0 | Erfolg |
+| 1 | CSV nicht gefunden / Output existiert ohne `-f` |
+| 2 | Spalte nicht vorhanden |
+| 3 | URL nicht erreichbar |
+| 4 | SSL-Fehler |
+| 5 | Leeres CSV |
+| 6 | `-i` + `-c` gleichzeitig oder ungültiges Trennzeichen |
+| 7 | Output-Verzeichnis fehlt |
+| 8 | input/output fehlt im nicht-interaktiven Modus |
 
 ## Modi
 
-### Interaktiver Modus (`-i`)
-
-1. Liest CSV (URL oder Datei)
-2. Zeigt verfügbare Spalten
-3. Fragt nach gewünschter Spalte (nummerierte Auswahl)
-4. Fragt nach Überschreiben falls Output existiert
-5. Fragt: "Soll systemd aufgesetzt werden?"
-   - Falls Ja:
-     - Timer-Optionen: stündlich / täglich / wöchentlich
-     - Bei täglich: Uhrzeit abfragen (HH:MM)
-     - Bei wöchentlich: Wochentag + Uhrzeit abfragen
-     - Erstellt `.service` und `.timer` Dateien
-     - Gibt Installations-Anleitung aus
-
-### Nicht-interaktiver Modus (systemd)
+### Interaktiv (`-i`) – fragt alles ab
 
 ```bash
-./csv2md.py --column "Spaltenname" --force <input> <output>
+python csv2md.py -i
 ```
+
+1. **CSV-Quelle** – Dateipfad oder URL
+2. **Trennzeichen** – auto / Komma / Semikolon / Tab
+3. CSV laden & parsen
+4. **Spalte wählen** – nummerierte Auswahl
+5. **Ausgabe-Dateipfad**
+6. Überschreiben? (falls existiert)
+7. **systemd einrichten?**
+   - Timer: stündlich / täglich (Uhrzeit) / wöchentlich (Wochentag + Uhrzeit)
+   - **"Nur Dateien erstellen"** – `.service` + `.timer` im aktuellen Verzeichnis
+   - **"Installieren"** – nach `~/.config/systemd/user/` kopieren + Timer aktivieren
+
+CLI-Argumente können einzelne Schritte überspringen:
+
+```bash
+csv2md.py -i eingabe.csv                  # input vorgegeben, Rest interaktiv
+csv2md.py -i -d "; "                      # delimiter vorgegeben
+```
+
+### Non-interaktiv (für systemd-Service)
+
+```bash
+python csv2md.py --column "Name" --force input.csv output.md
+```
+
+Läuft still durch – keine Rückfragen. Perfekt für systemd `ExecStart`.
 
 ## Markdown-Output
 
@@ -63,38 +90,36 @@ csv2md.py [Optionen] <input> <output>
 ...
 ```
 
+- UTF-8 Encoding
+- Keine Duplikate (case-sensitive)
+- Leere Zellen werden übersprungen
+- Original-Reihenfolge
+
 ## systemd-Integration
-
-### Erstellte Dateien
-
-- `csv2md.service` - Service-Datei zum Starten des Skripts
-- `csv2md.timer` - Timer-Datei für regelmäßige Ausführung
 
 ### Timer-Optionen
 
-| Option | Beschreibung |
-|--------|--------------|
-| stündlich | Alle 60 Minuten (OnCalendar=*-*-* *:00:00) |
-| täglich | Tägliche Ausführung zur angegebenen Uhrzeit |
-| wöchentlich | Wöchentlich am angegebenen Wochentag + Uhrzeit |
+| Option | OnCalendar |
+|--------|------------|
+| stündlich | `*-*-* *:00:00` |
+| täglich (08:30) | `*-*-* 08:30:00` |
+| wöchentlich (Mo, 08:30) | `Mon *-*-* 08:30:00` |
 
 ### Installation (User-Service)
 
 ```bash
-# Timer aktivieren und starten
+cp csv2md.service csv2md.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
 systemctl --user enable csv2md.timer
 systemctl --user start csv2md.timer
-
-# Status prüfen
 systemctl --user list-timers csv2md.timer
-
-# Logs anzeigen
 journalctl --user -u csv2md.service
 ```
 
 ### Wichtige Hinweise
 
-- User-Service wird in `~/.config/systemd/user/` installiert
-- Skript muss mit absoluten Pfaden arbeiten
-- Für URL-Inputs: `After=network-online.target` im Service
-- Timer nutzt `Persistent=true` um verpasste Runs nachzuholen
+- User-Service in `~/.config/systemd/user/`
+- Service nutzt absolute Pfade
+- Für URL-Inputs: `After=network-online.target`
+- Timer nutzt `Persistent=true`
+- `logging`-Modul statt `print()` im Service-Modus
