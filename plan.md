@@ -17,6 +17,66 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 ```
 
+## Coding-Richtlinien
+
+### Grundregeln
+
+| Regel | Vorgabe |
+|-------|---------|
+| **Shebang** | `#!/usr/bin/env python3` |
+| **main()-Guard** | Immer `if __name__ == "__main__"` |
+| **Imports** | Nur Standardbibliothek (csv, urllib, argparse, pathlib, sys, logging) |
+| **Type Hints** | Alle Funktionen typisieren |
+| **Strings** | f-strings bevorzugen, kein `%` oder `.format()` |
+| **Pfade** | `pathlib.Path`, nicht `os.path` |
+| **Logging** | `logging`-Modul statt `print()` — für systemd-Journal-Kompatibilität |
+| **Encoding** | `encoding="utf-8"` bei allen `open()`-Aufrufen |
+| **Rückgabewerte** | `sys.exit(0)` Erfolg, `sys.exit(n)` Fehler (Exit-Codes siehe unten) |
+| **Fehlerbehandlung** | Spezifische Exceptions (`FileNotFoundError`, `ValueError`), kein bare `except` |
+| **Kommentare** | Keine (außer Docstrings) |
+| **Docstrings** | Nur für komplexe Funktionen, kurz |
+
+### Code-Struktur
+
+```python
+#!/usr/bin/env python3
+"""csv2md - CSV to Markdown converter."""
+
+import argparse
+import csv
+import logging
+from pathlib import Path
+import sys
+import urllib.request
+import urllib.error
+
+logger = logging.getLogger(__name__)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    ...
+
+
+def read_csv(...) -> list[dict[str, str]]:
+    ...
+
+
+def convert(...) -> str:
+    ...
+
+
+def setup_systemd(...) -> None:
+    ...
+
+
+def main() -> int:
+    ...
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
 ## Verwendung
 
 ```bash
@@ -28,35 +88,57 @@ csv2md.py [Optionen] <input> <output>
 | Flag | Langform | Beschreibung |
 |------|----------|--------------|
 | `-i` | `--interactive` | Interaktiver Modus (Fragen stellen) |
-| `-c` | `--column NAME` | Spaltenname (non-interaktiv) |
+| `-c` | `--column NAME` | Spaltenname (non-interaktiv, **erforderlich** wenn `-i` fehlt) |
 | `-f` | `--force` | Output überschreiben ohne Nachfrage |
 | `-d` | `--delimiter CHAR` | CSV-Trennzeichen: `,` `;` `\t` `auto` (default: `auto`) |
 | `-e` | `--encoding NAME` | Zeichenkodierung (default: `utf-8`) |
 | `-n` | `--no-verify` | SSL-Zertifikatsprüfung deaktivieren |
 | `-h` | `--help` | Hilfe anzeigen |
 
+**Regel:** `-i` und `-c` schließen sich gegenseitig aus. Fehler + Exit 6 wenn beide gesetzt.
+
 ### Argumente
 
-- **input**: URL (https://...) oder Dateipfad zur CSV-Datei
+- **input**: URL (`https://...`) oder Dateipfad zur CSV-Datei
+  - Erkennung: `input_str.startswith(("https://", "http://"))` → URL, sonst Pfad
 - **output**: Dateipfad für die Markdown-Ausgabe
+  - Output-Verzeichnis muss existieren, sonst Fehler + Exit 7
+
+### Exit-Codes
+
+| Code | Bedeutung |
+|------|-----------|
+| 0 | Erfolg |
+| 1 | CSV nicht gefunden / nicht lesbar |
+| 2 | Spalte nicht vorhanden |
+| 3 | URL nicht erreichbar (Timeout 30s) |
+| 4 | SSL-Verifikationsfehler |
+| 5 | Leere CSV |
+| 6 | `-i` + `-c` gleichzeitig |
+| 7 | Output-Verzeichnis existiert nicht |
 
 ## Modi
 
 ### Interaktiver Modus (`-i`)
 
-1. Liest CSV (URL oder Datei)
-2. **Fragt nach CSV-Delimiter**: Komma / Semikolon / Tab / Auto-Erkennung
-3. Zeigt verfügbare Spalten
-4. Fragt nach gewünschter Spalte (nummerierte Auswahl)
-5. Fragt nach Überschreiben falls Output existiert
-6. Fragt: "Soll systemd aufgesetzt werden?"
-   - Falls Ja:
-     - Timer-Optionen: stündlich / täglich / wöchentlich
-     - Bei täglich: Uhrzeit abfragen (HH:MM)
-     - Bei wöchentlich: Wochentag + Uhrzeit abfragen
-     - **Fragt: "Nur Dateien erstellen" oder "Sofort installieren"?**
-       - "Dateien erstellen": `.service` und `.timer` im aktuellen Verzeichnis
-       - "Installieren": Dateien nach `~/.config/systemd/user/` kopieren + Timer aktivieren
+**Präziser Flow (Reihenfolge wichtig):**
+
+1. **Delimiter abfragen** — Komma / Semikolon / Tab / Auto-Erkennung
+   - Bei `auto`: Rohdaten laden, `csv.Sniffer` versuchen, bei Fehlschlag Fallback auf Komma
+2. **CSV laden** — URL oder Datei öffnen, mit gewähltem Delimiter parsen
+   - URL: `urllib.request.urlopen()` mit 30s Timeout, SSL-Verify (es sei denn `--no-verify`)
+3. **Spaltenüberschriften anzeigen** — nummerierte Liste (1, 2, 3, ...)
+4. **Spalte auswählen** — Nummer eingeben
+5. **Output existiert?** — Ja → "Überschreiben?" fragen; Nein → weiter
+6. **systemd-Abfrage:** "Soll systemd aufgesetzt werden?" (J/N)
+   - Falls Ja: Timer-Option (stündlich/täglich/wöchentlich)
+     - Bei täglich: Uhrzeit (HH:MM)
+     - Bei wöchentlich: Wochentag + Uhrzeit
+     - Wochentag-Format: `Mon`, `Tue`, `Wed`, `Thu`, `Fri`, `Sat`, `Sun`
+   - **"Nur Dateien erstellen" oder "Sofort installieren"?**
+     - Dateien erstellen → `.service`/`.timer` im aktuellen Verzeichnis
+     - Installieren → Dateien nach `~/.config/systemd/user/` kopieren + Timer aktivieren
+7. **Markdown generieren und schreiben** → Fertig
 
 ### Nicht-interaktiver Modus (systemd)
 
@@ -75,28 +157,104 @@ csv2md.py [Optionen] <input> <output>
 ...
 ```
 
-- Keine Duplikate (automatisch dedupliziert)
+- Output-Encoding: UTF-8
+- Keine Duplikate (automatisch dedupliziert, **case-sensitive**)
 - Leere Zellen werden übersprungen
-- Items werden in Original-Reihenfolge ausgegeben
+- Items in Original-Reihenfolge
+
+## CSV-Verarbeitung
+
+### Encoding
+
+- Default: **UTF-8**
+- BOM-Handling: `utf-8-sig` für Windows-kompatible CSVs
+- Default via `--encoding` überschreibbar
+
+### Delimiter
+
+| Wert | Bedeutung |
+|------|-----------|
+| `,` | Komma (Standard-CSV) |
+| `;` | Semikolon (deutsches CSV) |
+| `\t` | Tabstopp (TSV) |
+| `auto` | `csv.Sniffer().sniff()` — bei Fehlschlag: Fallback auf Komma |
+
+### Fehlerbehandlung
+
+- CSV nicht gefunden → Exit 1
+- Spalte nicht vorhanden → Exit 2
+- URL nicht erreichbar / Timeout (30s) → Exit 3
+- SSL-Verifikationsfehler → Exit 4 + Hinweis auf `--no-verify`
+- Leere CSV (0 Zeilen) → Exit 5
+- `-i` + `-c` gleichzeitig → Exit 6
+- Output-Verzeichnis fehlt → Exit 7
+- Delimiter-Erkennung fehlgeschlagen → Fallback auf Komma, kein Fehler
+
+## Netzwerk (URL-Input)
+
+- Default-Timeout: 30 Sekunden
+- SSL-Verifikation: standardmäßig aktiviert
+- `--no-verify` setzt `ssl._create_unverified_context()` (für self-signed)
+- HTTP Redirects: `urllib.request` folgt standardmäßig Redirects
 
 ## systemd-Integration
 
-### Erstellte Dateien
+### Service-Template (`csv2md.service`)
 
-- `csv2md.service` - Service-Datei zum Starten des Skripts
-- `csv2md.timer` - Timer-Datei für regelmäßige Ausführung
+```ini
+[Unit]
+Description=csv2md - CSV to Markdown Converter
+After=network-online.target
+Wants=network-online.target
 
-### Timer-Optionen
+[Service]
+Type=oneshot
+User=%u
+ExecStart=<ABSOLUTER_PFAD_ZUR_PYTHON> <ABSOLUTER_PFAD_ZUM_SKRIPT> --column <SPALTE> --delimiter <DELIMITER> --force <INPUT> <OUTPUT>
+WorkingDirectory=<ABSOLUTER_PFAD_ZUM_PROJEKT>
 
-| Option | Beschreibung |
-|--------|--------------|
-| stündlich | Alle 60 Minuten (OnCalendar=*-*-* *:00:00) |
-| täglich | Tägliche Ausführung zur angegebenen Uhrzeit |
-| wöchentlich | Wöchentlich am angegebenen Wochentag + Uhrzeit |
+[Install]
+WantedBy=default.target
+```
+
+**Hinweise:**
+- `User=%u` wird von systemd automatisch auf den aktuellen User gesetzt
+- `ExecStart` muss den absoluten Pfad zum venv-Python enthalten: `~/.config/systemd/user/` → auflösen zu `/home/user/.config/...`
+- `WorkingDirectory` auf das Projektverzeichnis setzen
+
+### Timer-Template (`csv2md.timer`)
+
+```ini
+[Unit]
+Description=csv2md Timer - regelmäßige CSV-Konvertierung
+
+[Timer]
+OnCalendar=<ONCALENDAR_SYNTAX>
+Persistent=true
+
+[Install]
+WantedBy=default.target
+```
+
+**OnCalendar-Syntax nach Timer-Option:**
+
+| Option | OnCalendar |
+|--------|------------|
+| stündlich | `*-*-* *:00:00` |
+| täglich (z.B. 08:30) | `*-*-* 08:30:00` |
+| wöchentlich (Mo, 08:30) | `Mon *-*-* 08:30:00` |
+
+Wochentage: `Mon`, `Tue`, `Wed`, `Thu`, `Fri`, `Sat`, `Sun`
 
 ### Installation (User-Service)
 
 ```bash
+# Dateien kopieren
+cp csv2md.service csv2md.timer ~/.config/systemd/user/
+
+# systemd neu laden
+systemctl --user daemon-reload
+
 # Timer aktivieren und starten
 systemctl --user enable csv2md.timer
 systemctl --user start csv2md.timer
@@ -114,44 +272,14 @@ journalctl --user -u csv2md.service
 - Skript muss mit absoluten Pfaden arbeiten
 - Für URL-Inputs: `After=network-online.target` im Service
 - Timer nutzt `Persistent=true` um verpasste Runs nachzuholen
-
-## CVS-Verarbeitung
-
-### Encoding
-
-- Default: **UTF-8**
-- Optionales BOM-Handling für Windows-Kompatibilität
-
-### Delimiter
-
-| Wert | Bedeutung |
-|------|-----------|
-| `,` | Komma (Standard-CSV) |
-| `;` | Semikolon (deutsches CSV) |
-| `\t` | Tabstopp (TSV) |
-| `auto` | Automatische Erkennung via `csv.Sniffer` |
-
-### Fehlerbehandlung
-
-- CSV nicht gefunden → Fehlermeldung + Exit 1
-- Spalte nicht vorhanden → Fehlermeldung + Exit 2
-- URL nicht erreichbar → Timeout nach 30s + Exit 3
-- SSL-Verifikationsfehler → Hinweis auf `--no-verify` + Exit 4
-- Leere CSV → Fehlermeldung + Exit 5
-
-## Netzwerk (URL-Input)
-
-- Default-Timeout: 30 Sekunden
-- SSL-Verifikation: standardmäßig aktiviert
-- `--no-verify` deaktiviert SSL-Prüfung (für self-signed Zertifikate)
-- HTTP Redirects werden gefolgt (max. 5)
+- `logging`-Modus statt `print()` verwenden, damit Ausgaben im journal landen
 
 ## Fallstricke
 
-1. **Interaktivität**: `input()` funktioniert nicht in systemd. Nur `-i` für interaktiven Modus.
-2. **Pfade**: Immer absolute Pfade verwenden.
-3. **Netzwerk**: systemd Service muss auf Netzwerk-Verfügbarkeit warten.
-4. **Logging**: stdout/stderr gehen an systemd journal.
-5. **Cross-Platform**: systemd nur unter Linux verfügbar.
-6. **Python Version**: Python 3.11+ erforderlich.
-7. **venv**: Immer mit aktiviertem venv arbeiten.
+1. **Interaktivität**: `input()` funktioniert nicht in systemd — systemd-Modus ist immer non-interaktiv
+2. **Pfade**: Service-Datei muss absolute Pfade enthalten — Skript ermittelt diese via `Path(__file__).resolve()`
+3. **Netzwerk**: systemd Service braucht `After=network-online.target` für URL-Inputs
+4. **Logging**: stdout/stderr gehen an systemd journal → `logging`-Modul verwenden
+5. **Cross-Platform**: systemd nur unter Linux verfügbar
+6. **Python Version**: Python 3.11+ erforderlich
+7. **venv**: Immer mit aktiviertem venv arbeiten (`.venv/` in `.gitignore`)
